@@ -521,13 +521,22 @@ void SX126xSetTxParams( int8_t power, RadioRampTimes_t rampTime )
                 break;
             }
         } 
-#if defined(WIFI_LORA_32_V4)
+#if defined(WIFI_LORA_32_V4) && defined(USE_GC1109_PA)
         //y = 0.0004x^3 - 0.011x^2 + 1.0866x - 11.365
         int8_t pa_power = power;
         power =  floor(0.0004*pow(pa_power, 3) - 0.011*pow(pa_power, 2) + 1.0866*pa_power - 11.365);
         if( power > 20 )
         {
             power = 20;
+        }
+        else if( power < -9 )
+        {
+            power = -9;
+        }
+#elif defined(WIFI_LORA_32_V4) && defined(USE_KCT8103L_PA)
+        if( power > 22 )
+        {
+            power = 22;
         }
         else if( power < -9 )
         {

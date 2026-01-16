@@ -52,9 +52,17 @@
 #define LORA_MISO      11
 #define LORA_MOSI      10
 #if defined(WIFI_LORA_32_V4)
+#if defined(USE_GC1109_PA)
 #define LORA_PA_POWER  7
 #define LORA_PA_EN     2
 #define LORA_PA_TX_EN  46
+#elif defined (USE_KCT8103L_PA)
+#define LORA_PA_POWER 7  // power en
+#define LORA_PA_CSD   2
+#define LORA_PA_CTX   5   // enable tx
+#else
+#warning "Please confirm if it is a version without FEM."
+#endif
 #endif
 #if defined(WIRELESS_TRACKER_V2)
 #define LORA_PA_POWER   7
