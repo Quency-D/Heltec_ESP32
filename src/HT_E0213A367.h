@@ -90,14 +90,52 @@ public:
 
 		setPartialRamArea(0,0,128, 250);
 		sendCommand(0x24);
-		for(int x=0; x<250; x++)
+
+		if (rotate_angle == ANGLE_0_DEGREE)
 		{
-			for (int y = 15; y >= 0; y--)
+			for(int x=0; x<250; x++)
 			{
-				if (y == 0)
-				sendData(~(buffer[x + y * 256] << 6));
-				else
-				sendData(~((buffer[x + y * 256] << 6) | (buffer[x + (y - 1) * 256] >> 2)));
+				for (int y = 15; y >= 0; y--)
+				{
+					if (y == 0)
+						sendData(~(buffer[x + y * 256] << 6));
+					else
+						sendData(~((buffer[x + y * 256] << 6) | (buffer[x + (y - 1) * 256] >> 2)));
+				}
+			}
+		}
+		else if (rotate_angle == ANGLE_180_DEGREE)
+		{
+			for(int x = 249; x >= 0; x--)
+			{
+				for (int y = 0; y < 16; y++)
+				{
+					uint8_t byte_data;
+					if (y == 15)
+						byte_data = buffer[x + y * 256] >> 2;
+					else
+						byte_data = (buffer[x + y * 256] >> 2) | (buffer[x + (y + 1) * 256] << 6);
+
+					uint8_t reversed = 0;
+					for (int bit = 0; bit < 8; bit++) {
+						reversed |= ((byte_data >> bit) & 1) << (7 - bit);
+					}
+
+					sendData(~reversed);
+				}
+			}
+		}
+		else
+		{
+			for(int x=0; x<250; x++)
+			{
+				for (int y = 15; y >= 0; y--)
+				{
+					if (y == 0)
+						sendData(~(buffer[x + y * 256] << 6));
+					else
+						sendData(~((buffer[x + y * 256] << 6) | (buffer[x + (y - 1) * 256] >> 2)));
+				}
 			}
 		}
 	}
