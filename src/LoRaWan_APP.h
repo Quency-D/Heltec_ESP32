@@ -4,6 +4,12 @@
 #ifndef LoRaWan_APP_H
 #define LoRaWan_APP_H
 #include "Arduino.h"
+
+/* PlatformIO compatibility alias for Heltec WiFi LoRa 32 V4 */
+#if defined(HELTEC_V4) && !defined(WIFI_LORA_32_V4)
+#define WIFI_LORA_32_V4
+#endif
+
 #if !defined(HT_DE01)&&!defined(WIFI_Kit_32)&&!defined(WIFI_Kit_32_V3)
 #include "ESP32_Mcu.h"
 #include <stdio.h>
