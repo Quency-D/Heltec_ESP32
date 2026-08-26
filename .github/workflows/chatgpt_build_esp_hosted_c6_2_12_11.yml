@@ -1,0 +1,144 @@
+name: ChatGPT Build ESP-Hosted C6 2.12.11
+
+on:
+  push:
+    branches:
+      - chatgpt/esp-hosted-c6-2.12.11-build
+    paths:
+      - .github/workflows/chatgpt_build_esp_hosted_c6_2_12_11.yml
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:v5.5.4
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create ESP-Hosted slave project
+        shell: bash
+        run: |
+          set -euxo pipefail
+          . "$IDF_PATH/export.sh"
+          rm -rf "$GITHUB_WORKSPACE/c6-build"
+          mkdir -p "$GITHUB_WORKSPACE/c6-build"
+          cd "$GITHUB_WORKSPACE/c6-build"
+          idf.py create-project-from-example "espressif/esp_hosted==2.12.11:slave"
+
+      - name: Build ESP32-C6 SDIO slave firmware
+        shell: bash
+        run: |
+          set -euxo pipefail
+          . "$IDF_PATH/export.sh"
+          cd "$GITHUB_WORKSPACE/c6-build/slave"
+          idf.py set-target esp32c6
+          idf.py build
+          echo '===== flash_project_args ====='
+          cat build/flash_project_args
+          echo '===== sdkconfig relevant settings ====='
+          grep -E 'CONFIG_IDF_TARGET|CONFIG_ESPTOOLPY_FLASH|CONFIG_ESP_HOSTED|CONFIG_SLAVE|CONFIG_TRANSPORT|CONFIG_SDIO' sdkconfig || true
+
+      - name: Package complete recovery firmware
+        shell: bash
+        run: |
+          set -euxo pipefail
+          . "$IDF_PATH/export.sh"
+          cd "$GITHUB_WORKSPACE/c6-build/slave"
+          rm -rf package
+          mkdir -p package
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, shlex, shutil
+
+          root = Path.cwd()
+          build = root / 'build'
+          package = root / 'package'
+          args_path = build / 'flash_project_args'
+          tokens = shlex.split(args_path.read_text())
+
+          entries = []
+          i = 0
+          while i < len(tokens) - 1:
+              try:
+                  off = int(tokens[i], 0)
+              except ValueError:
+                  i += 1
+                  continue
+              candidate = build / tokens[i + 1]
+              if candidate.is_file():
+                  entries.append((off, candidate, tokens[i + 1]))
+                  i += 2
+              else:
+                  i += 1
+
+          if not entries:
+              raise SystemExit('No flash binary entries found in flash_project_args')
+
+          entries.sort(key=lambda x: x[0])
+          max_end = max(off + src.stat().st_size for off, src, _ in entries)
+          merged = bytearray(b'\xFF' * max_end)
+
+          lines = [
+              'ESP32-C6 ESP-Hosted-MCU 2.12.11 complete recovery firmware',
+              'Built with ESP-IDF v5.5.4',
+              '',
+              'Flash Download Tool: select ESP32-C6, then either:',
+              'A) flash merged_full.bin at address 0x0',
+              'or',
+              'B) flash the individual files at the addresses below:',
+              '',
+          ]
+
+          for off, src, rel in entries:
+              data = src.read_bytes()
+              merged[off:off+len(data)] = data
+              out_name = src.name
+              if out_name == 'partition-table.bin':
+                  out_name = 'partition-table.bin'
+              shutil.copy2(src, package / out_name)
+              lines.append(f'0x{off:08X}  {out_name}  ({len(data)} bytes)')
+
+          (package / 'merged_full.bin').write_bytes(merged)
+          shutil.copy2(args_path, package / 'flash_project_args.txt')
+          shutil.copy2(build / 'flasher_args.json', package / 'flasher_args.json')
+          shutil.copy2(root / 'sdkconfig', package / 'sdkconfig.txt')
+
+          lines += [
+              '',
+              'Recommended settings:',
+              '  Chip: ESP32-C6',
+              '  Flash mode: keep the values encoded by the build / use DIO if the tool requires a selection',
+              '  Flash size: 4 MB for the ESP32-P4 Function EV Board C6',
+              '',
+              'Because this is a recovery from an incorrect write at 0x0, erase the C6 flash first,',
+              'then flash this complete image. Do not flash network_adapter.bin alone at 0x0.',
+          ]
+          (package / 'FLASH_INSTRUCTIONS.txt').write_text('\n'.join(lines) + '\n')
+
+          sums = []
+          for p in sorted(package.iterdir()):
+              if p.is_file() and p.name != 'SHA256SUMS.txt':
+                  h = hashlib.sha256(p.read_bytes()).hexdigest()
+                  sums.append(f'{h}  {p.name}')
+          (package / 'SHA256SUMS.txt').write_text('\n'.join(sums) + '\n')
+
+          print('\n'.join(lines))
+          print(f'Merged image size: {len(merged)} bytes')
+          PY
+
+          cd package
+          zip -9 ../ESP32C6_ESP-Hosted_2.12.11_IDF5.5.4_recovery.zip *
+          cd ..
+          ls -lh package ESP32C6_ESP-Hosted_2.12.11_IDF5.5.4_recovery.zip
+
+      - name: Upload recovery package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ESP32C6-ESP-Hosted-2.12.11-IDF5.5.4-recovery
+          path: c6-build/slave/ESP32C6_ESP-Hosted_2.12.11_IDF5.5.4_recovery.zip
+          if-no-files-found: error
+          retention-days: 7
